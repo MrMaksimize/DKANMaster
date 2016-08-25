@@ -1,0 +1,242 @@
+---
+title: "PortalReporter"
+output:
+  html_document:
+    highlight: espresso
+    self_contained: yes
+    theme: flatly
+  pdf_document: default
+---
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(
+    fig.path="figs/",
+    out.width = "400px",
+    out.height = "400px",
+    echo=FALSE,
+    warning=TRUE,
+    message=FALSE)
+```
+
+```{r}
+## Load and cleanup.
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+library(plotly)
+library(ggthemes)
+library(knitr)
+library(stringr)
+library(aws.s3)
+if (!require("DT")) install.packages('DT')
+
+source("./portalMaster.R")
+
+datasets <- dfs$datasets
+resources <- dfs$resources
+tags <- dfs$tags
+groups <- dfs$groups
+rm(dfs)
+
+colors <- list(
+    "blue" = "#0098db",
+    "blue11" = "#00549f",
+    "green12" ="#007b69",
+    "orange13" ="#9c6114",
+    "blue21" = "#005bbb",
+    "green22" = "#009581",
+    "orange23" = "#d47600",
+    "orange" ="#ffa02f",
+    "gray" ="#37424a",
+    "green" ="#00c7b2",
+    "yellow" ="#fcd900"
+)
+```
+
+## How many resources do we have per dataset?
+```{r out.width="800px", out.height="900px"}
+
+res_ds <- inner_join(resources, datasets, by = c("rs_ds_id" = "ds_id")) %>%
+    inner_join(groups, by = c("rs_ds_id" = "gr_ds_id")) %>%
+    group_by(ds_title, gr_title) %>%
+    count(ds_title, gr_title)
+
+names(res_ds) <- c("Dataset", "Group", "NumResources")
+
+g <- ggplot(res_ds, aes(x = Dataset, y = NumResources, fill=Group)) + 
+    geom_bar(stat="identity", 
+             colour = "#ffffff", 
+             position = position_dodge(width = 0.7),
+             width = 0.55) + 
+    coord_flip() +
+    labs(title = "Resources per Dataset", 
+         y = "Num Resources", 
+         x = "Dataset Name",
+         fill = "Group Title") +
+    theme(axis.text.y = element_text(margin = margin(10, 30))) +
+    scale_fill_manual(values=unlist(colors, use.names = FALSE))
+
+g <- ggplotly(g)
+
+plotly_POST(g, filename = "portal_resources_per_ds")
+
+g
+```
+
+## Tags
+<div class="row">
+<div class="col-md-6">
+
+```{r}
+tags <- tags[!is.na(tags$tg_vocabulary_id),]
+res_ds <- inner_join(datasets, tags, by= c("ds_id" = "tg_ds_id")) %>%
+    group_by(tg_name) %>%
+    count(tg_name)
+
+g <- ggplot(res_ds, aes(x = tg_name, y = n)) + 
+    geom_bar(stat="identity", 
+             colour = "#ffffff", 
+             fill = colors$blue,
+             position = position_dodge(width = 0.7),
+             width = 0.55) + 
+    coord_flip() +
+    labs(title = "Datasets per Tag", 
+         y = "Num Datasets", 
+         x = "Tag Name") +
+    theme(axis.text.y = element_text(margin = margin(10)))
+
+ggplotly(g)
+```
+
+</div>
+
+<div class="col-md-6">
+
+```{r}
+res_ds <- inner_join(resources, tags, by= c("rs_ds_id" = "tg_ds_id")) %>%
+    group_by(tg_name) %>%
+    count(tg_name)
+
+g <- ggplot(res_ds, aes(x = tg_name, y = n)) + 
+    geom_bar(stat="identity", 
+             colour = colors$white, 
+             fill = colors$blue,
+             position = position_dodge(width = 0.7),
+             width = 0.55) + 
+    coord_flip() +
+    labs(title = "Resources per Tag", 
+         y = "Num Resources", 
+         x = "Tag Name") +
+    theme(axis.text.y = element_text(margin = margin(10)))
+
+```
+
+</div>
+</div>
+
+## Groups
+
+<div class="row">
+<div class="col-md-6">
+
+```{r}
+res_ds <- inner_join(datasets, groups, by= c("ds_id" = "gr_ds_id")) %>%
+    group_by(gr_title) %>%
+    count(gr_title)
+
+g <- ggplot(res_ds, aes(x = gr_title, y = n)) + 
+    geom_bar(stat="identity", 
+             colour = "#FFFFFF", 
+             fill = colors$blue,
+             position = position_dodge(width = 0.7),
+             width = 0.55) + 
+    coord_flip() +
+    labs(title = "Datasets per Group", 
+         y = "Num Datasets", 
+         x = "Group Name") +
+    theme(axis.text.y = element_text(margin = margin(10, 30))) +
+    scale_fill_manual(values=unlist(colors, use.names = FALSE))
+
+ggplotly(g)
+```
+
+</div>
+<div class="col-md-6">
+
+```{r}
+res_ds <- inner_join(resources, groups, by= c("rs_ds_id" = "gr_ds_id")) %>%
+    group_by(gr_title) %>%
+    count(gr_title)
+
+g <- ggplot(res_ds, aes(x = gr_title, y = n)) + 
+    geom_bar(stat="identity", 
+             colour = "#ffffff", 
+             fill = colors$blue,
+             position = position_dodge(width = 0.7),
+             width = 0.55) + 
+    coord_flip() +
+    labs(title = "Resources per Group", 
+         y = "Num Resources", 
+         x = "Group Name") +
+    theme(axis.text.y = element_text(margin = margin(10)))
+
+ggplotly(g)
+```
+</div>
+</div>
+
+## How many Resources of each format?
+```{r}
+
+res_ds <- resources %>%
+    group_by(rs_format) %>%
+    count(rs_format)
+
+g <- ggplot(res_ds, aes(x = rs_format, y = n)) + 
+    geom_bar(stat="identity", 
+             colour = "#ffffff", 
+             fill = colors$blue,
+             position = position_dodge(width = 0.7),
+             width = 0.55) + 
+    coord_flip() +
+    labs(title = "Files per Format Type", 
+         y = "Num Files", 
+         x = "Format Name") +
+    theme(axis.text.y = element_text(margin = margin(10, 30))) +
+    scale_fill_manual(values=unlist(colors, use.names = FALSE))
+
+ggplotly(g)
+
+```
+
+#### Total Datasets
+`r nrow(datasets)`
+
+#### Total Files
+`r nrow(resources)`
+
+#### Total Groups
+`r length(unique(groups$gr_id))`
+
+#### Total Tags
+`r length(unique(tags$tg_id))`
+
+## Which files are not on S3?
+
+
+```{r fig.width=3}
+
+not_on_s3 <- inner_join(resources, datasets, by=c("rs_ds_id" = "ds_id"))
+not_on_s3 <- not_on_s3[!str_detect(not_on_s3$rs_url, "s3"), c("rs_name", "ds_url", "rs_url")]
+data_sd_gov <- not_on_s3[str_detect(not_on_s3$rs_url, "data\\.sandiego\\.gov"), c("rs_name", "ds_url", "rs_url")]
+
+datatable(data_sd_gov, 
+          options = list(
+              pageLength = 100,
+              lengthMenu = c(10, 50, 100, 200)
+          ),
+          class = 'cell-border stripe', 
+          rownames = FALSE, 
+          escape = FALSE,
+          extensions = 'Responsive')
+```
